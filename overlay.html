@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Overlay - Marcador Fútbol (TV style)</title>
+<style>
+:root{
+  --bg: rgba(0,0,0,0.6);
+  --left: #FFCC00;
+  --right: #FF3333;
+  --text: #ffffff;
+  --padding: 14px;
+  --radius: 18px;
+}
+html,body{height:100%;margin:0;background:transparent;}
+body{
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start; /* top */
+  pointer-events:none; /* overlay non-interactive */
+}
+.overlay{
+  margin-top:8px;
+  background:var(--bg);
+  color:var(--text);
+  border-radius:28px;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  padding:10px 26px;
+  box-shadow:0 6px 30px rgba(0,0,0,0.5);
+  transform:translateY(0);
+  max-width:calc(100% - 40px);
+}
+.team{
+  min-width:110px;
+  padding:10px 18px;
+  border-radius:12px;
+  font-weight:700;
+  font-size:28px;
+  text-align:center;
+  color:#fff;
+  line-height:1;
+}
+.left{ background:var(--left); color:#041022; }
+.right{ background:var(--right); color:#fff; }
+.center{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  padding:6px 26px;
+  background:rgba(255,255,255,0.03);
+  border-radius:12px;
+  min-width:170px;
+}
+.score{
+  font-size:44px;
+  font-weight:800;
+  letter-spacing:6px;
+}
+.timer{
+  font-size:28px;
+  font-weight:700;
+  background:transparent;
+  padding:2px 8px;
+  border-radius:8px;
+}
+@media (max-width:480px){
+  .team{min-width:72px;font-size:20px;padding:8px 12px}
+  .score{font-size:28px}
+  .timer{font-size:18px}
+  .overlay{gap:8px;padding:8px 12px;border-radius:14px}
+}
+</style>
+</head>
+<body>
+<div class="overlay" id="overlay">
+  <div class="team left" id="teamA">AAA</div>
+  <div class="center">
+    <div class="score" id="score">0&nbsp;&nbsp;-&nbsp;&nbsp;0</div>
+    <div class="timer" id="time">00:00</div>
+  </div>
+  <div class="team right" id="teamB">BBB</div>
+</div>
+
+<script>
+// Helper: get param or default
+function param(key, def){ const u=new URLSearchParams(location.search); return u.get(key) || def; }
+// Escape simple
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Apply colors (allow hex or CSS color)
+document.documentElement.style.setProperty('--bg', param('bg','rgba(0,0,0,0.6)'));
+document.documentElement.style.setProperty('--left', param('left','#FFCC00'));
+document.documentElement.style.setProperty('--right', param('right','#FF3333'));
+
+// Render static values (teams, score, initial time)
+function renderFromParams(){
+  const tA = param('teamA','AAA').toUpperCase().slice(0,3);
+  const tB = param('teamB','BBB').toUpperCase().slice(0,3);
+  const sA = param('scoreA','0');
+  const sB = param('scoreB','0');
+  const time = param('time','00:00');
+  document.getElementById('teamA').textContent = tA;
+  document.getElementById('teamB').textContent = tB;
+  document.getElementById('score').innerHTML = `${escapeHtml(sA)}&nbsp;&nbsp;-&nbsp;&nbsp;${escapeHtml(sB)}`;
+  // set initial timer value (internal)
+  setTimerFromString(time);
+  renderTimer();
+}
+
+// --------- CRONÓMETRO (MM:SS) ---------
+let timerSeconds = 0;        // seconds elapsed or value to show
+let timerInterval = null;
+let timerRunning = false;
+
+function pad(n){ return n < 10 ? '0' + n : '' + n; }
+function secsToMMSS(s){
+  s = Math.max(0, Math.floor(s));
+  const mm = Math.floor(s/60);
+  const ss = s % 60;
+  return pad(mm) + ':' + pad(ss);
+}
+function parseMMSS(str){
+  if(!str) return 0;
+  const clean = String(str).trim();
+  const parts = clean.split(':');
+  if(parts.length===1) return parseInt(parts[0],10) || 0;
+  const m = parseInt(parts[0],10) || 0;
+  const s = parseInt(parts[1],10) || 0;
+  return m*60 + s;
+}
+function renderTimer(){
+  document.getElementById('time').textContent = secsToMMSS(timerSeconds);
+}
+function setTimerFromString(str){
+  timerSeconds = parseMMSS(str);
+}
+function startTimer(){
+  if(timerRunning) return;
+  timerRunning = true;
+  timerInterval = setInterval(()=>{ timerSeconds++; renderTimer(); }, 1000);
+}
+function pauseTimer(){
+  if(!timerRunning) return;
+  timerRunning = false;
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+function resetTimer(){
+  pauseTimer();
+  timerSeconds = 0;
+  renderTimer();
+}
+
+// Listen to postMessage for updates and commands
+window.addEventListener('message', function(ev){
+  try{
+    const data = (typeof ev.data === 'string') ? JSON.parse(ev.data) : ev.data;
+    if(!data) return;
+    if(data.type === 'update'){
+      // field updates (team, score, direct time set)
+      if(data.teamA !== undefined) document.getElementById('teamA').textContent = String(data.teamA).toUpperCase().slice(0,3);
+      if(data.teamB !== undefined) document.getElementById('teamB').textContent = String(data.teamB).toUpperCase().slice(0,3);
+      if(data.scoreA !== undefined || data.scoreB !== undefined){
+        const a = data.scoreA !== undefined ? data.scoreA : param('scoreA','0');
+        const b = data.scoreB !== undefined ? data.scoreB : param('scoreB','0');
+        document.getElementById('score').innerHTML = `${escapeHtml(a)}&nbsp;&nbsp;-&nbsp;&nbsp;${escapeHtml(b)}`;
+      }
+      if(data.time !== undefined){ setTimerFromString(data.time); renderTimer(); }
+      if(data.bg !== undefined) document.documentElement.style.setProperty('--bg', data.bg);
+      if(data.left !== undefined) document.documentElement.style.setProperty('--left', data.left);
+      if(data.right !== undefined) document.documentElement.style.setProperty('--right', data.right);
+    }
+    if(data.type === 'command'){
+      // commands: start | pause | reset | set {time}
+      if(data.cmd === 'start'){ startTimer(); }
+      else if(data.cmd === 'pause'){ pauseTimer(); }
+      else if(data.cmd === 'reset'){ resetTimer(); }
+      else if(data.cmd === 'set' && data.time !== undefined){ setTimerFromString(data.time); renderTimer(); }
+    }
+  }catch(e){
+    // ignore malformed messages
+    console.warn('Invalid message', e);
+  }
+}, false);
+
+// Initial render (sets timerSeconds from URL param)
+renderFromParams();
+</script>
+</body>
+</html>

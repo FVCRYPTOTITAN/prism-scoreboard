@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Controlador - Marcador</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#f4f6f8;color:#031024}
+.container{max-width:900px;margin:0 auto}
+h1{font-size:20px}
+.row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.input{flex:1;min-width:120px}
+label{display:block;font-size:12px;color:#334}
+input[type=text], input[type=color]{width:100%;padding:8px;border-radius:6px;border:1px solid #ccd}
+.btn{padding:10px 14px;border-radius:8px;border:none;background:#1565d8;color:#fff;cursor:pointer}
+.preview-wrap{margin-top:12px;border:1px solid #e0e6ef;padding:12px;background:#fff;border-radius:8px}
+.preview{width:100%;height:120px;overflow:hidden;background:transparent}
+.small{font-size:12px;color:#667}
+.note{font-size:13px;color:#445;margin-top:8px}
+.controls{display:flex;gap:10px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Controlador del Marcador (genera URL para PRISM)</h1>
+  <div class="row">
+    <div class="input">
+      <label>Iniciales Equipo A</label>
+      <input id="teamA" type="text" value="AAA" maxlength="3">
+    </div>
+    <div class="input">
+      <label>Goles Equipo A</label>
+      <input id="scoreA" type="text" value="0">
+    </div>
+    <div class="input">
+      <label>Iniciales Equipo B</label>
+      <input id="teamB" type="text" value="BBB" maxlength="3">
+    </div>
+    <div class="input">
+      <label>Goles Equipo B</label>
+      <input id="scoreB" type="text" value="0">
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="input">
+      <label>Cronómetro / Tiempo (MM:SS)</label>
+      <input id="time" type="text" value="00:00">
+    </div>
+    <div class="input">
+      <label>Color fondo (CSS)</label>
+      <input id="bg" type="text" value="rgba(0,0,0,0.6)">
+    </div>
+    <div class="input">
+      <label>Color Equipo A</label>
+      <input id="left" type="color" value="#ffcc00">
+    </div>
+    <div class="input">
+      <label>Color Equipo B</label>
+      <input id="right" type="color" value="#ff3333">
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="gen">Generar URL para PRISM</button>
+    <button class="btn" id="open">Abrir Overlay (nueva pestaña)</button>
+    <button class="btn" id="post">Enviar por postMessage (si overlay abierto desde este controlador)</button>
+    <button class="btn" id="startBtn">Start</button>
+    <button class="btn" id="pauseBtn">Pause</button>
+    <button class="btn" id="resetBtn">Reset</button>
+    <button class="btn" id="setBtn">Set</button>
+  </div>
+
+  <div class="note">
+    <strong>Instrucciones rápidas:</strong> Haz clic en <em>Generar URL para PRISM</em>, copia la URL generada y pégala en PRISM → Add → pega la URL. <br>
+    Si quieres controlar el marcador en tiempo real desde este panel, pulsa <em>Abrir Overlay</em> (abrirá la página del overlay en una nueva pestaña) y después usa los botones <em>Start/Pause/Reset/Set</em> para controlar el cronómetro sin recargar.
+  </div>
+
+  <div class="preview-wrap">
+    <div><strong>Preview</strong></div>
+    <iframe id="preview" class="preview" srcdoc="<p style='font-size:13px;color:#889'>Preview will appear here</p>"></iframe>
+    <div style="margin-top:8px">
+      <input id="outurl" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccd" readonly>
+    </div>
+  </div>
+</div>
+
+<script>
+function qsEncode(o){
+  const u = new URLSearchParams();
+  for(const k in o) if(o[k] !== undefined && o[k] !== null) u.set(k,o[k]);
+  return u.toString();
+}
+function buildUrl(){
+  const base = location.origin + location.pathname.replace(/controller/i, 'overlay');
+  const params = {
+    teamA: document.getElementById('teamA').value || 'AAA',
+    teamB: document.getElementById('teamB').value || 'BBB',
+    scoreA: document.getElementById('scoreA').value || '0',
+    scoreB: document.getElementById('scoreB').value || '0',
+    time: document.getElementById('time').value || '00:00',
+    bg: document.getElementById('bg').value || 'rgba(0,0,0,0.6)',
+    left: document.getElementById('left').value || '#ffcc00',
+    right: document.getElementById('right').value || '#ff3333'
+  };
+  return base + '?' + qsEncode(params);
+}
+
+document.getElementById('gen').addEventListener('click', ()=>{
+  const url = buildUrl();
+  document.getElementById('outurl').value = url;
+  document.getElementById('preview').src = url;
+});
+
+let overlayRef = null;
+document.getElementById('open').addEventListener('click', ()=>{
+  const url = buildUrl();
+  overlayRef = window.open(url, '_blank');
+  document.getElementById('outurl').value = url;
+});
+
+// Send update (teams, scores, time) as 'update' message
+document.getElementById('post').addEventListener('click', ()=>{
+  if(!overlayRef || overlayRef.closed){ alert('Primero abre el overlay con "Abrir Overlay".'); return; }
+  const payload = {
+    type: 'update',
+    teamA: document.getElementById('teamA').value.toUpperCase().slice(0,3),
+    teamB: document.getElementById('teamB').value.toUpperCase().slice(0,3),
+    scoreA: document.getElementById('scoreA').value,
+    scoreB: document.getElementById('scoreB').value,
+    time: document.getElementById('time').value,
+    bg: document.getElementById('bg').value,
+    left: document.getElementById('left').value,
+    right: document.getElementById('right').value
+  };
+  overlayRef.postMessage(payload, '*');
+  alert('Mensaje enviado al overlay.');
+});
+
+function sendCommand(cmd, payload){
+  if(!overlayRef || overlayRef.closed){ alert('Primero abre el overlay con "Abrir Overlay".'); return; }
+  const msg = Object.assign({ type: 'command', cmd: cmd }, payload || {});
+  overlayRef.postMessage(msg, '*');
+}
+
+// Buttons: start, pause, reset, set
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  const t = document.getElementById('time').value || '00:00';
+  // set then start to sync
+  sendCommand('set', { time: t });
+  sendCommand('start');
+});
+
+document.getElementById('pauseBtn').addEventListener('click', ()=>{
+  sendCommand('pause');
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  sendCommand('reset');
+  document.getElementById('time').value = '00:00';
+  document.getElementById('gen').click();
+});
+
+document.getElementById('setBtn').addEventListener('click', ()=>{
+  const t = document.getElementById('time').value || '00:00';
+  sendCommand('set', { time: t });
+});
+</script>
+</body>
+</html>
